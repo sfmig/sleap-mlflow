@@ -10,19 +10,24 @@ flagging things that are usually labeling mistakes:
   * points outside the image bounds
   * per-node visibility     (nodes that are rarely labeled)
 
-Each check is a standalone function taking a loaded `Labels` object and
-returning a list of records, so they can be reused independently.
+To run:
+    uv run review_labels.py /path/to/labels.slp --limit 0
+
 """
 
-import argparse
+# /// script
+# requires-python = "==3.13"
+# dependencies = [
+#     "numpy",
+#     "sleap-io>=0.7.0",
+# ]
+# ///
 
+import argparse
 import numpy as np
 import sleap_io as sio
 
 
-# --------------------------------------------------------------------------- #
-# helpers
-# --------------------------------------------------------------------------- #
 def source_name(video):
     """Original image/video filename behind an (embedded) video, if any."""
     src = video.source_video or video
@@ -48,7 +53,7 @@ def video_hw(video):
 
 
 # --------------------------------------------------------------------------- #
-# checks
+# Checks
 # --------------------------------------------------------------------------- #
 def multi_instance_frames(labels, max_instances_expected=1):
     """Frames with more user instances than expected (sets SLEAP's max animals)."""
@@ -180,7 +185,7 @@ def node_visibility(labels):
 
 
 # --------------------------------------------------------------------------- #
-# report
+# Report
 # --------------------------------------------------------------------------- #
 def print_rows(rows, fmt, limit=None):
     shown = rows if limit is None else rows[:limit]
