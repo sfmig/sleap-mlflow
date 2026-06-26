@@ -50,6 +50,7 @@ import argparse
 import os
 import re
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import mlflow
@@ -100,8 +101,8 @@ def run_name_from_train_script(text):
     return prefixes.pop()
 
 
-def resolve_job_dir(sleap_training_job):
-    """Unzip the exported SLEAP training job .zip and return the unzipped renamed path.
+def resolve_sleap_runs_subdir(sleap_training_job):
+    """Resolve the directory under `sleap-runs` for the exported SLEAP training job .zip.
 
     The unzipped directory is saved under `sleap-runs` and renamed to the SLEAP
     run name. The run name is derived from the bundled train-script.sh. 
@@ -124,12 +125,10 @@ def resolve_job_dir(sleap_training_job):
             )
         run_name = run_name_from_train_script(zf.read(member).decode())
 
-        dest = Path("sleap-runs") / f"{run_name}"
-        if dest.exists():
-            print(f"Reusing existing job dir: {dest}")
-        else:
-            print(f"Extracting {src} -> {dest}")
-            zf.extractall(dest)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = Path("sleap-runs") / f"{run_name}_{timestamp}"
+        print(f"Extracting {src} -> {dest}")
+        zf.extractall(dest)
     return dest.resolve()
 
 
@@ -144,15 +143,17 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
 
     # Resolve to absolute so it stays valid after we chdir into it below.
     # Extracts the exported job .zip to sleap-runs/<NAME>.
-    sleap_job_dir = resolve_job_dir(sleap_training_job)
+    sleap_job_dir = resolve_sleap_runs_subdir(sleap_training_job)
 
     # --------------------------------
     # Call autolog
     mlflow.pytorch.autolog(
         # log_models=True, 
-        # checkpoint=True,
-        # logs best/last .ckpt to MLflow
+        # checkpoint=True, --- # logs best/last .ckpt to MLflow by default
         log_every_n_epoch=1,
+        # checkpoint=False, --- since sleap-nn saves it already
+        # checkpoint_save_best_only=False, -- save every ckpt 
+        # checkpoint_monitor="val/loss",   --- use sleap-nn's actual val-loss key
     )
 
     # --------------------------------
