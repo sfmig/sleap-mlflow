@@ -2,7 +2,7 @@
 
 
 Run the SLEAP training job using the following command:
-    uv run mlflow_train.py /path/to/unzipped/sleap/training/job/dir \
+    uv run mlflow_train.py /path/to/exported/sleap/training/job.zip \
         --mlflow-experiment-name sleap-KK-dome \
         --mlflow-tracking-uri sqlite:///mlflow.db
 
@@ -45,11 +45,89 @@ working directiory. To give an absolute path, you add a leading slash for the ro
 
 import argparse
 import os
+import re
+import zipfile
 from pathlib import Path
 
 import mlflow
 from omegaconf import OmegaConf
 from sleap_nn.train import run_training
+
+# SLEAP encodes run names as "<prefix>.<model_type>.<suffix>".
+# These are the model types, matching the head-config keys in
+# sleap_nn.config.model_config.HeadConfig (sleap-nn 0.2.0).
+SLEAP_MODEL_TYPES = (
+    "single_instance",
+    "centroid",
+    "centered_instance",
+    "bottomup",
+    "multi_class_bottomup",
+    "multi_class_topdown",
+)
+
+
+def run_name_from_train_script(text):
+    """Derive the SLEAP run-name prefix from a train-script.sh's contents.
+
+    SLEAP encodes run names as "<prefix>.<model_type>.<suffix>". The GUI-set 
+    prefix is the part before the model-type string, which is what we use 
+    to name the run directory.
+
+    This function parses every ``trainer_config.run_name="..."`` and returns 
+    the shared prefix that precedes the model-type string.
+    """
+    # SLEAP quotes the value with either single or double quotes.
+    names = re.findall(r"""trainer_config\.run_name=['"]([^'"]+)['"]""", text)
+    prefixes = set()
+    for name in names:
+        parts = name.split(".")
+        for i, part in enumerate(parts):
+            if part in SLEAP_MODEL_TYPES:
+                prefixes.add(".".join(parts[:i]))
+                break
+        else:
+            # No known model token found; fall back to the whole name.
+            prefixes.add(name)
+    if not prefixes:
+        raise ValueError("No trainer_config.run_name found in train-script.sh")
+    if len(prefixes) > 1:
+        raise ValueError(
+            f"train-script.sh has more than one run-name prefix: {sorted(prefixes)}"
+        )
+    return prefixes.pop()
+
+
+def resolve_job_dir(sleap_training_job):
+    """Unzip the exported SLEAP training job .zip and return the unzipped renamed path.
+
+    The unzipped directory is saved under `sleap-runs` and renamed to the SLEAP
+    run name. The run name is derived from the bundled train-script.sh. 
+    
+    A .zip is required; anything else raises an error.
+    """
+    src = Path(sleap_training_job)
+    if src.suffix != ".zip":
+        raise ValueError(
+            f"Expected an exported SLEAP job .zip, got: {src}"
+        )
+
+    with zipfile.ZipFile(src) as zf:
+        member = next(
+            (n for n in zf.namelist() if n.endswith("train-script.sh")), None
+        )
+        if member is None:
+            raise FileNotFoundError(
+                f"No train-script.sh in {src}; cannot derive the run name."
+            )
+        run_name = run_name_from_train_script(zf.read(member).decode())
+
+        dest = Path("sleap-runs") / f"{run_name}"
+        if dest.exists():
+            print(f"Reusing existing job dir: {dest}")
+        else:
+            print(f"Extracting {src} -> {dest}")
+            zf.extractall(dest)
+    return dest.resolve()
 
 
 def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
@@ -61,8 +139,9 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     # An experiment is a group of runs
     mlflow.set_experiment(mlflow_experiment_name)
 
-    # Resolve to absolute so it stays valid after we chdir into it below
-    sleap_job_dir = Path(sleap_training_job).resolve()
+    # Resolve to absolute so it stays valid after we chdir into it below.
+    # Extracts the exported job .zip to sleap-runs/<NAME>.
+    sleap_job_dir = resolve_job_dir(sleap_training_job)
 
     # --------------------------------
     # Call autolog
@@ -155,7 +234,10 @@ def parse_args():
     )
     parser.add_argument(
         "sleap_training_job",
-        help="Path to the unzipped SLEAP training job directory.",
+        help=(
+            "Path to the exported SLEAP training job (.zip). It is extracted to "
+            "sleap-runs/<NAME>, where NAME is derived from train-script.sh."
+        ),
     )
     parser.add_argument(
         "--mlflow-experiment-name",

@@ -3,4 +3,6 @@ run_*/
 **/*.slp
 
 mlruns/*
+sleap-runs/*
 
+labels_Kostas/*
