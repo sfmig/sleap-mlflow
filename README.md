@@ -4,7 +4,7 @@ MLflow is a model and experiment tracking framework that can be used with SLEAP.
 
 I assume people change model config from the GUI --- generate a new training package.
 
-One training job package = one SLEAP run name = one MLflow run name
+unzipping one SLEAP training job package => one SLEAP run name directory with timestamp => one MLflow run name
 
 ## Suggested directory structure
 ```
@@ -53,6 +53,9 @@ uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005
     sleep 3 && xdg-open "http://localhost:5005/#/experiments"
 ```
 
+## Navigating the UI
+* Metrics vs parameters
+
 ## Tips
 
 
@@ -63,4 +66,5 @@ uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005
 
 
 ## References
+- https://mlflow.org/docs/latest/ml/getting-started/quickstart/
 - https://mlflow.org/docs/latest/ml/tracking/
