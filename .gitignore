@@ -1,2 +1,6 @@
 run_*/
 *.db
+**/*.slp
+
+mlruns/*
+
