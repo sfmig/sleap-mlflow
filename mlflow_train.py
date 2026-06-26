@@ -60,6 +60,7 @@ from sleap_nn.train import run_training
 # SLEAP encodes run names as "<prefix>.<model_type>.<suffix>".
 # These are the model types, matching the head-config keys in
 # sleap_nn.config.model_config.HeadConfig (sleap-nn 0.2.0).
+# TODO: test with other model types
 SLEAP_MODEL_TYPES = (
     "single_instance",
     "centroid",
@@ -68,16 +69,17 @@ SLEAP_MODEL_TYPES = (
     "multi_class_bottomup",
     "multi_class_topdown",
 )
+TOP_DOWN_ORDER = ["centroid", "centered_instance"]
 
 
 def run_name_from_train_script(text):
     """Derive the SLEAP run-name prefix from a train-script.sh's contents.
 
-    SLEAP encodes run names as "<prefix>.<model_type>.<suffix>". The GUI-set 
-    prefix is the part before the model-type string, which is what we use 
+    SLEAP encodes run names as "<prefix>.<model_type>.<suffix>". The GUI-set
+    prefix is the part before the model-type string, which is what we use
     to name the run directory.
 
-    This function parses every ``trainer_config.run_name="..."`` and returns 
+    This function parses every ``trainer_config.run_name="..."`` and returns
     the shared prefix that precedes the model-type string.
     """
     # SLEAP quotes the value with either single or double quotes.
@@ -101,15 +103,13 @@ def run_name_from_train_script(text):
     return prefixes.pop()
 
 
-def resolve_sleap_runs_subdir(sleap_training_job):
-    """Resolve the directory under `sleap-runs` for the exported SLEAP training job .zip.
+def get_sleap_run_name_from_zip(sleap_training_job_zip):
+    """Read the SLEAP run-name prefix from an training job .zip.
 
-    The unzipped directory is saved under `sleap-runs` and renamed to the SLEAP
-    run name. The run name is derived from the bundled train-script.sh. 
-    
-    A .zip is required; anything else raises an error.
+    The prefix is derived from the bundled train-script.sh. A .zip is required;
+    anything else raises an error.
     """
-    src = Path(sleap_training_job)
+    src = Path(sleap_training_job_zip)
     if src.suffix != ".zip":
         raise ValueError(
             f"Expected an exported SLEAP job .zip, got: {src}"
@@ -123,8 +123,17 @@ def resolve_sleap_runs_subdir(sleap_training_job):
             raise FileNotFoundError(
                 f"No train-script.sh in {src}; cannot derive the run name."
             )
-        run_name = run_name_from_train_script(zf.read(member).decode())
+        return run_name_from_train_script(zf.read(member).decode())
 
+
+def create_sleap_runs_subdir(sleap_training_job_zip, run_name):
+    """Resolve the directory under `sleap-runs` for the given SLEAP training job .zip.
+
+    The unzipped directory is saved under `sleap-runs` and renamed to the SLEAP
+    run name (passed in, derived from the bundled train-script.sh).
+    """
+    src = Path(sleap_training_job_zip)
+    with zipfile.ZipFile(src) as zf:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = Path("sleap-runs") / f"{run_name}_{timestamp}"
         print(f"Extracting {src} -> {dest}")
@@ -132,7 +141,44 @@ def resolve_sleap_runs_subdir(sleap_training_job):
     return dest.resolve()
 
 
-def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
+def train_and_log(config_yaml, sleap_job_dir, nested=False):
+    """Launch a SLEAP training with MLflow logging.
+
+    `nested=True` attaches the run as a child of the currently active run
+    (used for the two top-down models under a shared parent run).
+    """
+    # Read omega config
+    config = OmegaConf.load(config_yaml)  # output is an Omega DictConfig
+
+    # TODO: use same run_name as set in SLEAP config / GUI
+    with mlflow.start_run(run_name=config.trainer_config.run_name, nested=nested):
+        # Track YAML config as artifact
+        # TODO: review, this duplicates YAML file
+        mlflow.log_dict(
+            OmegaConf.to_container(config, resolve=True),
+            f"sleap_{config_yaml.stem}.yaml",
+        )
+
+
+        # Log params
+
+        # Log artifacts ------------        
+        # Log train datasets as artifact
+        # TODO: review; save path to labels_gt.train.0.slp files instead?
+        for p in config.data_config.train_labels_path:
+            mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/train")
+
+        # Log val datasets as artifact
+        # TODO: review; save path to labels_gt.val.0.slp files instead?
+        if config.data_config.val_labels_path:
+            for p in config.data_config.val_labels_path:
+                mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/val")
+
+        # Train — autolog should handle metrics/params/model
+        run_training(config)
+
+
+def main(sleap_training_job_zip, mlflow_experiment_name, mlflow_tracking_uri):
     # --------------
     # MLFlow parameters
     # Database location
@@ -141,18 +187,22 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     # An experiment is a group of runs
     mlflow.set_experiment(mlflow_experiment_name)
 
+    # Derive the SLEAP run-name prefix from the job .zip; it names the extracted
+    # dir and (for top-down) the parent MLflow run.
+    run_name = get_sleap_run_name_from_zip(sleap_training_job_zip)
+
     # Resolve to absolute so it stays valid after we chdir into it below.
     # Extracts the exported job .zip to sleap-runs/<NAME>.
-    sleap_job_dir = resolve_sleap_runs_subdir(sleap_training_job)
+    sleap_job_dir = create_sleap_runs_subdir(sleap_training_job_zip, run_name)
 
     # --------------------------------
     # Call autolog
     mlflow.pytorch.autolog(
-        # log_models=True, 
+        # log_models=True,
         # checkpoint=True, --- # logs best/last .ckpt to MLflow by default
         log_every_n_epoch=1,
-        # checkpoint=False, --- since sleap-nn saves it already
-        # checkpoint_save_best_only=False, -- save every ckpt 
+        checkpoint=False, #--- since sleap-nn saves it already
+        # checkpoint_save_best_only=False, -- save every ckpt
         # checkpoint_monitor="val/loss",   --- use sleap-nn's actual val-loss key
     )
 
@@ -169,6 +219,21 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
             "is expected to be flat (configs at the top level); check it isn't wrapped "
             "in a top-level folder."
         )
+    if len(list_yaml_files) > 2:
+        raise ValueError(
+            f"Expected 1 (bottom-up) or 2 (top-down) training config *.yaml files in "
+            f"{sleap_job_dir}, found {len(list_yaml_files)}: "
+            f"{sorted(p.name for p in list_yaml_files)}."
+        )
+
+    # Order by model type (centroid before centered_instance) so top-down models
+    # train and appear in MLflow in pipeline order. The .yaml stem is the model
+    # type, e.g. centroid.yaml / centered_instance.yaml.
+    list_yaml_files.sort(
+        key=lambda p: TOP_DOWN_ORDER.index(p.stem)
+        if p.stem in TOP_DOWN_ORDER
+        else len(TOP_DOWN_ORDER)
+    )
 
     # --------------------------------
     # Run training for each config
@@ -177,46 +242,15 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     # this is so that the relative label paths in the configs resolves
     os.chdir(sleap_job_dir)
 
-    for config_yaml in list_yaml_files:
-        # Load config
-        config = OmegaConf.load(config_yaml)  # output is an Omega DictConfig
-
-        # Start mlflow run
-        # REVIEW: use same run_name as set in SLEAP config / GUI
-        with mlflow.start_run(run_name=config.trainer_config.run_name):
-            # Track the inputs
-            mlflow.log_dict(
-                OmegaConf.to_container(config, resolve=True),
-                f"sleap_{config_yaml.name}.yaml",
-            )
-
-            # Log as hyperparameters
-            # mlflow.log_params(params)
-
-            # Log train datasets as artifact
-            for p in config.data_config.train_labels_path:
-                mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/train")
-
-            # Log val datasets as artifact
-            if config.data_config.val_labels_path:
-                for p in config.data_config.val_labels_path:
-                    mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/val")
-
-            # Train — autolog should handle metrics/params/model
-            run_training(config)
-
-            # Log the model
-            #model_info = mlflow.sklearn.log_model(sk_model=lr, name="iris_model")
-
-
-            # mlflow.log_metric("accuracy", accuracy)
-
-            # Optional: Set a tag that we can use to remind ourselves what this run was for
-            # mlflow.set_tag("Training Info", "Basic LR model for iris data")
-            
-            # # Optional: also archive the final ckpt dir
-            # mlflow.log_artifacts(f"{config.trainer_config.ckpt_dir}/{config.trainer_config.run_name}",
-            #                      artifact_path="sleap_run")
+    if len(list_yaml_files) == 2:
+        # Top-down: group the two models (centroid + centered_instance) as
+        # child runs under a single parent run, named after the SLEAP prefix.
+        with mlflow.start_run(run_name=Path(sleap_job_dir).stem):
+            for config_yaml in list_yaml_files:
+                train_and_log(config_yaml, sleap_job_dir, nested=True)
+    else:
+        # Bottom-up: a single run.
+        train_and_log(list_yaml_files[0], sleap_job_dir)
 
 
 # --------------------------------
@@ -243,7 +277,7 @@ def parse_args():
         description="Run SLEAP training and log to MLflow.",
     )
     parser.add_argument(
-        "sleap_training_job",
+        "sleap_training_job_zip",
         help=(
             "Path to the exported SLEAP training job (.zip). It is extracted to "
             "sleap-runs/<NAME>, where NAME is derived from train-script.sh."
@@ -271,7 +305,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     main(
-        sleap_training_job=args.sleap_training_job,
+        sleap_training_job_zip=args.sleap_training_job_zip,
         mlflow_experiment_name=args.mlflow_experiment_name,
         mlflow_tracking_uri=args.mlflow_tracking_uri,
     )
