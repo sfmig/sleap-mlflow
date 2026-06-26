@@ -2,24 +2,46 @@
 
 
 Run the SLEAP training job using the following command:
-    python mlflow_train.py /path/to/unzipped/sleap/training/job/dir \
+    uv run mlflow_train.py /path/to/unzipped/sleap/training/job/dir \
         --mlflow-experiment-name sleap-KK-dome \
         --mlflow-tracking-uri sqlite:///mlflow.db
 
-Then visualise the progress in the MLflow dashboard
-    mlflow server --backend-store-uri sqlite:///mlflow.db --port 5000
+Then visualise the progress in the MLflow dashboard. The server only needs mlflow
+itself, so run it in an ephemeral uv environment (no project install required):
+    uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000
 
-Or to go to the experiments tab directly:
-    mlflow server --backend-store-uri sqlite:///mlflow.db --port 5000 & \
+Or to launch the server and jump straight to the experiments tab:
+    uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000 & \
     sleep 3 && xdg-open "http://localhost:5000/#/experiments"
 
 
 NOTES:
+- `uvx 'mlflow>=3.13,<4' ...` is shorthand for `uv tool run ...`: uv builds a
+  one-off ephemeral environment satisfying that constraint and runs the `mlflow`
+  entry point in it. The constraint is kept on the same major version as the
+  `mlflow` dependency above so the server's DB schema matches the one written by
+  training. Reproducible training versions come from the lockfile
+  (mlflow_train.py.lock); refresh it with `uv lock --script mlflow_train.py --upgrade`.
 - For a SQLite tracking URI, the path after sqlite:/// is taken relative to the current
 working directiory. To give an absolute path, you add a leading slash for the root — so you end up with four slashes total:
     --mlflow-tracking-uri sqlite:////home/sminano/swc/project_sleap_dome/mlflow.db
 
 """
+
+# /// script
+# requires-python = "==3.13.*"
+# dependencies = [
+#     "mlflow>=3.13,<4",
+#     "omegaconf",
+#     "sleap-nn>=0.2.0",
+# ]
+#
+# # Pick the torch wheel matching the local hardware automatically: uv detects
+# # the CUDA driver (or lack of one) at install time and pulls the right build
+# # (cpu / cu128 / cu129 / ...). No manual index pinning needed.
+# [tool.uv]
+# torch-backend = "auto"
+# ///
 
 import argparse
 import os
