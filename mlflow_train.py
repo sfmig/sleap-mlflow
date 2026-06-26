@@ -137,6 +137,27 @@ def create_sleap_runs_subdir(sleap_training_job_zip, run_name):
     return dest.resolve()
 
 
+def flatten_params(config, parent_key=""):
+    """Flatten a (possibly nested) config into slash-separated scalar params.
+
+    MLflow params must be flat scalars, so nested dicts are collapsed with
+    slash-separated keys (e.g. ``trainer_config/optimizer/lr``) and lists are
+    indexed (e.g. ``data_config/train_labels_path/0``). ``None`` values are
+    kept; MLflow stores params as strings, so they appear as ``"None"``.
+    """
+    items = {}
+    for key, value in config.items():
+        full_key = f"{parent_key}/{key}" if parent_key else str(key)
+        if isinstance(value, dict):
+            items.update(flatten_params(value, full_key))
+        elif isinstance(value, (list, tuple)):
+            for i, elem in enumerate(value):
+                items.update(flatten_params({str(i): elem}, full_key))
+        else:
+            items[full_key] = value
+    return items
+
+
 def train_and_log(config_yaml, sleap_job_dir, nested=False):
     """Launch a SLEAP training with MLflow logging.
 
@@ -154,23 +175,31 @@ def train_and_log(config_yaml, sleap_job_dir, nested=False):
             f"sleap_{config_yaml.stem}.yaml",
         )
 
+        # Log config as params to filter, groupby and show in columns
+        # (flatten nested dicts)
+        mlflow.log_params(
+            flatten_params(OmegaConf.to_container(config, resolve=True))
+        )
 
-        # Log params
+        # # Log artifacts ------------
+        # # Log train datasets as artifact
+        # # TODO: review; save path to labels_gt.train.0.slp files instead?
+        # for p in config.data_config.train_labels_path:
+        #     mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/train")
 
-        # Log artifacts ------------        
-        # Log train datasets as artifact
-        # TODO: review; save path to labels_gt.train.0.slp files instead?
-        for p in config.data_config.train_labels_path:
-            mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/train")
-
-        # Log val datasets as artifact
-        # TODO: review; save path to labels_gt.val.0.slp files instead?
-        if config.data_config.val_labels_path:
-            for p in config.data_config.val_labels_path:
-                mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/val")
+        # # Log val datasets as artifact
+        # # TODO: review; save path to labels_gt.val.0.slp files instead?
+        # if config.data_config.val_labels_path:
+        #     for p in config.data_config.val_labels_path:
+        #         mlflow.log_artifact(sleap_job_dir / p, artifact_path="datasets/val")
 
         # Train — autolog should handle metrics/params/model
         run_training(config)
+
+        # # Log paths to outputs (train and val label files, metrics etc?)
+        # mlflow.log_params(
+        #     {}
+        # )
 
 
 def main(sleap_training_job_zip, mlflow_experiment_name, mlflow_tracking_uri):
@@ -202,7 +231,7 @@ def main(sleap_training_job_zip, mlflow_experiment_name, mlflow_tracking_uri):
     )
 
     # --------------------------------
-    # Load configs
+    # Get list of YAML configs
     # (one for bottom-up, two for top-down)
     # (jobs.yaml is ignored)
     list_yaml_files = [
