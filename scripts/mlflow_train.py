@@ -8,10 +8,10 @@ Run the SLEAP training job using the following command:
 
 Then visualise the progress in the MLflow dashboard. The server only needs mlflow
 itself, so run it in an ephemeral uv environment (no project install required):
-    uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000
+    uvx --python 3.13 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000
 
 Or to launch the server and jump straight to the experiments tab:
-    uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000 & \
+    uvx --python 3.13 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5000 & \
     sleep 3 && xdg-open "http://localhost:5000/#/experiments"
 
 
@@ -20,7 +20,10 @@ NOTES:
   one-off ephemeral environment satisfying that constraint and runs the `mlflow`
   entry point in it. The constraint is kept on the same major version as the
   `mlflow` dependency above so the server's DB schema matches the one written by
-  training. Reproducible training versions come from the lockfile
+  training. `--python 3.13` matches the script's requires-python: without it uvx
+  defaults to the newest interpreter (3.14), and mlflow 3.14.0 fails to import on
+  Python 3.14 (it imports `Traversable` from `importlib.abc`, removed in 3.14).
+  Reproducible training versions come from the lockfile
   (mlflow_train.py.lock); refresh it with `uv lock --script mlflow_train.py --upgrade`.
 - For a SQLite tracking URI, the path after sqlite:/// is taken relative to the current
 working directiory. To give an absolute path, you add a leading slash for the root — so you end up with four slashes total:
@@ -159,6 +162,12 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     list_yaml_files = [
         p for p in list(sleap_job_dir.glob("*.yaml")) if p.name != "jobs.yaml"
     ]
+    if not list_yaml_files:
+        raise FileNotFoundError(
+            f"No training config *.yaml files found in {sleap_job_dir}. The job .zip "
+            "is expected to be flat (configs at the top level); check it isn't wrapped "
+            "in a top-level folder."
+        )
 
     # --------------------------------
     # Run training for each config
