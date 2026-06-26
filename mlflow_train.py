@@ -111,14 +111,10 @@ def get_sleap_run_name_from_zip(sleap_training_job_zip):
     """
     src = Path(sleap_training_job_zip)
     if src.suffix != ".zip":
-        raise ValueError(
-            f"Expected an exported SLEAP job .zip, got: {src}"
-        )
+        raise ValueError(f"Expected an exported SLEAP job .zip, got: {src}")
 
     with zipfile.ZipFile(src) as zf:
-        member = next(
-            (n for n in zf.namelist() if n.endswith("train-script.sh")), None
-        )
+        member = next((n for n in zf.namelist() if n.endswith("train-script.sh")), None)
         if member is None:
             raise FileNotFoundError(
                 f"No train-script.sh in {src}; cannot derive the run name."
@@ -145,12 +141,11 @@ def train_and_log(config_yaml, sleap_job_dir, nested=False):
     """Launch a SLEAP training with MLflow logging.
 
     `nested=True` attaches the run as a child of the currently active run
-    (used for the two top-down models under a shared parent run).
+    (every model run is nested under a parent named after the SLEAP job dir).
     """
     # Read omega config
     config = OmegaConf.load(config_yaml)  # output is an Omega DictConfig
 
-    # TODO: use same run_name as set in SLEAP config / GUI
     with mlflow.start_run(run_name=config.trainer_config.run_name, nested=nested):
         # Track YAML config as artifact
         # TODO: review, this duplicates YAML file
@@ -201,7 +196,7 @@ def main(sleap_training_job_zip, mlflow_experiment_name, mlflow_tracking_uri):
         # log_models=True,
         # checkpoint=True, --- # logs best/last .ckpt to MLflow by default
         log_every_n_epoch=1,
-        checkpoint=False, #--- since sleap-nn saves it already
+        checkpoint=False,  # --- since sleap-nn saves it already
         # checkpoint_save_best_only=False, -- save every ckpt
         # checkpoint_monitor="val/loss",   --- use sleap-nn's actual val-loss key
     )
@@ -242,19 +237,15 @@ def main(sleap_training_job_zip, mlflow_experiment_name, mlflow_tracking_uri):
     # this is so that the relative label paths in the configs resolves
     os.chdir(sleap_job_dir)
 
-    if len(list_yaml_files) == 2:
-        # Top-down: group the two models (centroid + centered_instance) as
-        # child runs under a single parent run, named after the SLEAP prefix.
-        with mlflow.start_run(run_name=Path(sleap_job_dir).stem):
-            for config_yaml in list_yaml_files:
-                train_and_log(config_yaml, sleap_job_dir, nested=True)
-    else:
-        # Bottom-up: a single run.
-        train_and_log(list_yaml_files[0], sleap_job_dir)
+    # Group all models (one for bottom-up, two for top-down) as child runs
+    # under a single parent run, named after the timestamped job dir.
+    with mlflow.start_run(run_name=Path(sleap_job_dir).stem):
+        for config_yaml in list_yaml_files:
+            train_and_log(config_yaml, sleap_job_dir, nested=True)
 
 
 # --------------------------------
-# # Parse the csv after training
+# # Parse the csv after training to log loss
 
 # run_dir = Path(config.trainer_config.ckpt_dir) / config.trainer_config.run_name
 # for csv in run_dir.glob("*.csv"):
