@@ -1,8 +1,10 @@
 run_*/
 *.db
 **/*.slp
+*.bak
 
 mlruns/*
-sleap-runs/*
+sleap-runs/*/
+sleap-runs/*.zip
 
-labels_Kostas/*
+__pycache__/*
