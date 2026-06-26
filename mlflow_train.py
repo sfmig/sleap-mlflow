@@ -15,7 +15,8 @@ Or to go to the experiments tab directly:
 
 
 NOTES:
-- For a SQLite tracking URI, the path after sqlite:/// is taken relative to the cwd. To give an absolute path, you add a leading slash for the root — so you end up with four slashes total:
+- For a SQLite tracking URI, the path after sqlite:/// is taken relative to the current
+working directiory. To give an absolute path, you add a leading slash for the root — so you end up with four slashes total:
     --mlflow-tracking-uri sqlite:////home/sminano/swc/project_sleap_dome/mlflow.db
 
 """
@@ -44,15 +45,16 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     # --------------------------------
     # Call autolog
     mlflow.pytorch.autolog(
-        log_models=True,
-        checkpoint=True,
+        # log_models=True, 
+        # checkpoint=True,
         # logs best/last .ckpt to MLflow
         log_every_n_epoch=1,
     )
 
     # --------------------------------
     # Load configs
-    # TODO: when is jobs.yaml used? I think never
+    # (one for bottom-up, two for top-down)
+    # (jobs.yaml is ignored)
     list_yaml_files = [
         p for p in list(sleap_job_dir.glob("*.yaml")) if p.name != "jobs.yaml"
     ]
@@ -60,7 +62,8 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
     # --------------------------------
     # Run training for each config
 
-    # Run from the job dir so the relative label paths in the configs resolve
+    # Run from the job dir
+    # this is so that the relative label paths in the configs resolves
     os.chdir(sleap_job_dir)
 
     for config_yaml in list_yaml_files:
@@ -68,12 +71,16 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
         config = OmegaConf.load(config_yaml)  # output is an Omega DictConfig
 
         # Start mlflow run
+        # REVIEW: use same run_name as set in SLEAP config / GUI
         with mlflow.start_run(run_name=config.trainer_config.run_name):
             # Track the inputs
             mlflow.log_dict(
                 OmegaConf.to_container(config, resolve=True),
                 f"sleap_{config_yaml.name}.yaml",
             )
+
+            # Log as hyperparameters
+            # mlflow.log_params(params)
 
             # Log train datasets as artifact
             for p in config.data_config.train_labels_path:
@@ -87,6 +94,15 @@ def main(sleap_training_job, mlflow_experiment_name, mlflow_tracking_uri):
             # Train — autolog should handle metrics/params/model
             run_training(config)
 
+            # Log the model
+            #model_info = mlflow.sklearn.log_model(sk_model=lr, name="iris_model")
+
+
+            # mlflow.log_metric("accuracy", accuracy)
+
+            # Optional: Set a tag that we can use to remind ourselves what this run was for
+            # mlflow.set_tag("Training Info", "Basic LR model for iris data")
+            
             # # Optional: also archive the final ckpt dir
             # mlflow.log_artifacts(f"{config.trainer_config.ckpt_dir}/{config.trainer_config.run_name}",
             #                      artifact_path="sleap_run")
@@ -122,6 +138,7 @@ def parse_args():
     parser.add_argument(
         "--mlflow-experiment-name",
         dest="mlflow_experiment_name",
+        default="DEFAULT",
         help="MLflow experiment name (group of runs).",
     )
     parser.add_argument(
