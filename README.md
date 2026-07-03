@@ -25,11 +25,15 @@ Install uv (version that supports torch-backend solver)
 
 
 ## Steps
-1. Git clone repo locally
+You can do this locally, in an interactive node in the cluster, or in a batch job (include script).
+
+0. Click the green button on the top right that says "Use this template"
+
+1. Git clone the repo added to your account locally
 
 2. In the SLEAP GUI, export your training job package as a zip and save it under the `sleap-runs` directory in the repo.
 
-3. Run the script using `uv` (it will install dependencies)
+3. From the repo root directory, launch a training job with mlflow tracking by running: 
 ```
 uv run mlflow_train.py \
     /path/to/exported/sleap/training/job.zip \
@@ -38,15 +42,16 @@ uv run mlflow_train.py \
 This will
 - unzip the training job package and place its contents into a directory `<SLEAP-RUN-NAME>`, named after the run name
 selected in the SLEAP GUI when selecting the training job package.
-- launch training and track its results with mlflow
+- launch training and track its results with mlflow (it will install any required dependencies)
 
 
-3. Do just once per session: launch the mlflow server
+3. Just once per session: launch the mlflow server to visualise the tracked results
 ```
 uvx --python 3.13 'mlflow>=3.13,<4' server --port 5005
 ```
+Click Model training tab on the left-hand side, then Experiments.
 
-Or to jump to the experiments tab
+Or to jump to the experiments tab directly
 
 ```
 uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005 & \
@@ -57,10 +62,10 @@ uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005
 * Metrics vs parameters
 
 ## Tips
-
+* You can use the cloned repo to keep track of changes to the launching script. The commit of the launching script is logged to MLflow
 
 ## Notes
--  The one caveat: torch-backend = "auto" detects CUDA via the driver, so on an exotic setup you can override with UV_TORCH_BACKEND=cu128 uv run ... or by hardcoding the value instead of "auto".
+- The one caveat: torch-backend = "auto" detects CUDA via the driver, so on an exotic setup you can override with UV_TORCH_BACKEND=cu128 uv run ... or by hardcoding the value instead of "auto".
 - If port is busy
 - Default database path and absolute path caveats
 
