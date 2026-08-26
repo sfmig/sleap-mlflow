@@ -177,9 +177,7 @@ def train_and_log(config_yaml, sleap_job_dir, nested=False):
 
         # Log config as params to filter, groupby and show in columns
         # (flatten nested dicts)
-        mlflow.log_params(
-            flatten_params(OmegaConf.to_container(config, resolve=True))
-        )
+        mlflow.log_params(flatten_params(OmegaConf.to_container(config, resolve=True)))
 
         # # Log artifacts ------------
         # # Log train datasets as artifact
@@ -299,26 +297,31 @@ def parse_args():
     parser.add_argument(
         "sleap_training_job_zip",
         help=(
-            "Path to the exported SLEAP training job (.zip). It is extracted to "
-            "sleap-runs/<NAME>, where NAME is derived from train-script.sh."
+            "Path to the exported SLEAP training job (.zip). The zip is extracted to "
+            "`sleap-runs/<RUN-NAME>`, where <RUN-NAME> is the run name defined in the SLEAP "
+            "GUI, derived from `train-script.sh`."
         ),
     )
     parser.add_argument(
         "--mlflow-experiment-name",
         dest="mlflow_experiment_name",
         default="DEFAULT",
-        help="MLflow experiment name (group of runs).",
+        help=("A common name to group a set runs (default: DEFAULT)."),
     )
     parser.add_argument(
         "--mlflow-tracking-uri",
         dest="mlflow_tracking_uri",
         default="sqlite:///mlflow.db",
         help=(
-            "MLflow tracking URI (database location)."
-            "By default, it is created under the directory"
-            "from which the script is launched"
+            "Where MLflow stores runs, metrics and parameters. Accepts a local "
+            "SQLite/database path (e.g. sqlite:///mlflow.db), a local directory "
+            "(e.g. ./mlruns) or a remote tracking server URL "
+            "(e.g. http://127.0.0.1:5000). Use the same value with "
+            "`mlflow ui --backend-store-uri <URI>` to browse the results. "
+            "(default: sqlite:///mlflow.db)"
         ),
     )
+
     return parser.parse_args()
 
 
