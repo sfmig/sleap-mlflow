@@ -43,25 +43,22 @@ bash run_mlflow_training.sh \
 This will
 - unzip the training job package and place its contents into a directory `<SLEAP-RUN-NAME>`, named after the run name
 defined in the SLEAP GUI when creating the training job package.
+- launch the MLflow dashboard in the background (on a free port) and open it in your browser, on the "Experiments" tab, so you can monitor the run as it trains.
 - launch training and track its results with MLflow. It will create an `mlruns` folder if it does not exist and an `mlflow.db` database file to keep track of it. The script also installs any required dependencies. 
 
+When training ends, the dashboard stays up so you can inspect the results. Press Ctrl-C to stop it and exit.
 
-4. To monitor the completed and ongoing jobs: launch the mlflow server. You may want to do this in a separate terminal (just once per session):
+4. Options to control the dashboard:
 ```
-uvx --python 3.13 'mlflow>=3.13,<4' server --port 5005
+bash run_mlflow_training.sh /path/to/job.zip --no-dashboard      # don't launch it (e.g. in a batch job)
+bash run_mlflow_training.sh /path/to/job.zip --mlflow-port 5005  # use a specific port instead of a free one
 ```
-Click "Model training" tab on the left-hand side, then "Experiments".
 
-Or to jump to the experiments tab directly (ensure the "Model training" tab is selected)
-
+If you would rather run the dashboard separately (e.g. in another terminal, just once per session), the server only needs mlflow itself. For a specific port (5005):
 ```
-# get a free port
-PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')
-
-# run mlflow dashboard in that port
-uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port "$PORT" & \
-    sleep 3 && xdg-open "http://localhost:$PORT/#/experiments"
+uvx --python 3.13 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005
 ```
+Then go to http://localhost:5005/#/experiments?workflowType=machine_learning and select the relevant experiment name from "Experiments".
 
 ## Navigating the UI
 * Metrics vs parameters
