@@ -36,7 +36,7 @@ You can do this locally, in an interactive node in the cluster, or in a batch jo
 
 3. From the repo root directory, launch a training job with mlflow tracking by running: 
 ```
-uv run mlflow_train.py \
+bash run_mlflow_training.sh \
     /path/to/exported/sleap/training/job.zip \
     --mlflow-experiment-name mlflow-expt-name \ # optional, to group runs together  (e.g. data-augmentation-study)
 ```
