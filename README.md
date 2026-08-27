@@ -3,7 +3,7 @@
 [MLflow](https://mlflow.org/docs/latest/ml/) is a model and experiment tracking framework that can be used with the pose estimation package [SLEAP](https://sleap.ai/).
 
 
-This workflow assumes users define the model and training configuration from the SLEAP GUI, and generate a new [training job package](https://docs.sleap.ai/latest/notebooks/Training_and_inference_using_Google_Drive/?h=training+job+package#create-and-export-the-training-job-package) (i.e. a new `slp.training_job.zip` file) everytime from the "Run Training.." dialog under the "Predict" menu.
+This workflow assumes users define the model and training configuration from the SLEAP GUI, and generate a new [training job package](https://docs.sleap.ai/latest/notebooks/Training_and_inference_using_Google_Drive/?h=training+job+package#create-and-export-the-training-job-package) (i.e. a new `slp.training_job.zip` file) everytime from the "Run Training.." dialog under the "Predict" menu. For clarity, we recommend adding the run-name defined in the SLEAP GUI to the exported training job package (e.g. rename it to `<sleap-run-name>.slp.training_job.zip`)
 
 The run-name defined in the SLEAP GUI will be used to track the same runs in MLflow.
 
@@ -28,7 +28,7 @@ Install uv (TODO: specify version that supports torch-backend solver)
 ## Steps
 You can do this locally, in an interactive node in the cluster, or in a batch job (TODO: include script).
 
-0. Click the green button on the top right that says "Use this template". This will ...
+0. Click the green button on the top right that says "Use this template". This will create a copy of this repository under your own GitHub account, which you can then clone and customise.
 
 1. Git clone the repo added to your account locally
 
@@ -52,11 +52,15 @@ uvx --python 3.13 'mlflow>=3.13,<4' server --port 5005
 ```
 Click "Model training" tab on the left-hand side, then "Experiments".
 
-Or to jump to the experiments tab directly
+Or to jump to the experiments tab directly (ensure the "Model training" tab is selected)
 
 ```
-uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005 & \
-    sleep 3 && xdg-open "http://localhost:5005/#/experiments"
+# get a free port
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')
+
+# run mlflow dashboard in that port
+uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port "$PORT" & \
+    sleep 3 && xdg-open "http://localhost:$PORT/#/experiments"
 ```
 
 ## Navigating the UI
@@ -71,7 +75,6 @@ uvx 'mlflow>=3.13,<4' server --backend-store-uri sqlite:///mlflow.db --port 5005
 
 ## Notes
 - torch-backend = "auto" detects CUDA via the driver, so on an exotic setup you can override with UV_TORCH_BACKEND=cu128 uv run ... or by hardcoding the value instead of "auto".
-- If port is busy, define another one
 - Default database path and absolute path caveats
 
 
